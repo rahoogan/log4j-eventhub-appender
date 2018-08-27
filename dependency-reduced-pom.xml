@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.rahoogan.log4j</groupId>
+  <artifactId>log4j-eventhub-appender</artifactId>
+  <name>SLF4J Azure EventHub Logger</name>
+  <version>1.0-SNAPSHOT</version>
+  <description>Simple appender to send log4j messages to an Azure EventHub endpoint</description>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>2.4.3</version>
+        <executions>
+          <execution>
+            <id>make-assembly</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+          </execution>
+        </executions>
+        <dependencies>
+          <dependency>
+            <groupId>com.github.edwgiz</groupId>
+            <artifactId>maven-shade-plugin.log4j2-cachefile-transformer</artifactId>
+            <version>2.6.1</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <transformers>
+            <transformer />
+          </transformers>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.1</version>
+        <executions>
+          <execution>
+            <id>log4j-plugin-processor</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <proc>only</proc>
+              <annotationProcessors>
+                <annotationProcessor>org.apache.logging.log4j.core.config.plugins.processor.PluginProcessor</annotationProcessor>
+              </annotationProcessors>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <repositories>
+    <repository>
+      <id>java.net</id>
+      <url>https://maven.java.net/content/repositories/public/</url>
+    </repository>
+  </repositories>
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.12</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  <properties>
+    <slf4j.version>1.7.12</slf4j.version>
+    <junit.version>4.12</junit.version>
+    <commons.lang3.version>3.4</commons.lang3.version>
+    <gson.version>2.6.2</gson.version>
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <mockito.version>1.10.19</mockito.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+  </properties>
+</project>
+
