@@ -11,9 +11,6 @@ import java.security.InvalidParameterException;
 import java.util.Properties;
 import java.text.MessageFormat;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.StringEntity;
@@ -24,13 +21,28 @@ import java.net.URL;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.rahoogan.http.HttpPostMethodThread;
 import com.rahoogan.http.EventHubHttp;
 
+import org.apache.http.HttpEntity;
+import org.apache.http.util.EntityUtils;
+import org.apache.http.HttpResponse;
+
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+
 /**
+ * This class provides an implementation of a log4j1.x Appender to 
+ * forward events to Azure EventHub using the REST API documented here: 
+ * https://docs.microsoft.com/en-us/rest/api/eventhub/
  * 
+ * For best performance, it is reccomended to configure this with
+ * log4j1.x's AsyncAppender so that events are forwarded asynchronously 
+ * to the eventhub endpoint.
+ * 
+ * Author: Rahul Raghavan
+ * Last Updated: 29/08/2018
  */
-public final class EventHubRestAppender extends AppenderSkeleton {
+public final class EventHubRestSyncAppender extends AppenderSkeleton {
     public static final String PROPERTIES_FILE = "config.properties";
     public static final String PROP_EVH_NAMESPACE = "namespacename";
     public static final String PROP_EVH_NAME = "eventhubname";
@@ -38,8 +50,10 @@ public final class EventHubRestAppender extends AppenderSkeleton {
     public static final String PROP_EVH_SAS_KEY = "saskey";
     public static final String PROP_RETRIES = "retries";
 
+    public static final String EVH_TIMEOUT = "60";
+    public static final String EVH_API_VERSION = "2014-01";
+
     private final Gson gson;
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     private URL evhUrl;
     private String evhNamespace;
@@ -49,10 +63,13 @@ public final class EventHubRestAppender extends AppenderSkeleton {
     private int evhRetryAttempts;
 
     /**
-     * 
+     * Constructor: Setup objects and parameters to set up a HTTP 
+     * connection to the EventHub REST API Endpoint
+     * Exceptions: Register an error with the default log4j error 
+     * handler when an invalid configuration is detected
      */
-    public EventHubRestAppender() {
-        // Read from properties file
+    public EventHubRestSyncAppender() {
+        // Read from properties file (in class path)
         final Properties properties = new Properties();
         try(final InputStream stream = ClassLoader.getSystemClassLoader().getResourceAsStream(PROPERTIES_FILE)) {
             properties.load(stream);
@@ -94,16 +111,18 @@ public final class EventHubRestAppender extends AppenderSkeleton {
         this.evhSasKeyname = properties.getProperty(PROP_EVH_SAS_KEYNAME);
         this.evhSasKey = properties.getProperty(PROP_EVH_SAS_KEY);
 
+        // Setup Eventhub URL
         gson = new GsonBuilder().create();
         URIBuilder ub = new URIBuilder();
         String host = new StringBuilder().append(this.evhNamespace).append(".servicebus.windows.net").toString();
         String path = new StringBuilder().append("/").append(this.evhName).append("/messages").toString();
         ub.setHost(host);
         ub.setPath(path);
-        ub.addParameter("timeout", "60");
-        ub.addParameter("api-version", "2014-01");
+        ub.addParameter("timeout", EVH_TIMEOUT);
+        ub.addParameter("api-version", EVH_API_VERSION);
         ub.setScheme("https");
 
+        // Build EventHub URL
         try {
             this.evhUrl = ub.build().toURL();
         } catch (MalformedURLException e) {
@@ -118,16 +137,17 @@ public final class EventHubRestAppender extends AppenderSkeleton {
         // Do Nothing
     }
 
+    /**
+     * Send HTTP POST Using the following format:
+     * POST https://your-namespace.servicebus.windows.net/your-event-hub/messages?timeout=60&api-version=2014-01 HTTP/1.1  
+        Authorization: SharedAccessSignature sr=your-namespace.servicebus.windows.net&sig=your-sas-key&se=1403736877&skn=RootManageSharedAccessKey  
+        Content-Type: application/atom+xml;type=entry;charset=utf-8  
+        Host: your-namespace.servicebus.windows.net  
+
+        { "DeviceId":"dev-01", "Temperature":"37.0" }  
+    */
     @Override
     protected void append(LoggingEvent event) {
-        /**
-         * POST https://your-namespace.servicebus.windows.net/your-event-hub/messages?timeout=60&api-version=2014-01 HTTP/1.1  
-            Authorization: SharedAccessSignature sr=your-namespace.servicebus.windows.net&sig=your-sas-key&se=1403736877&skn=RootManageSharedAccessKey  
-            Content-Type: application/atom+xml;type=entry;charset=utf-8  
-            Host: your-namespace.servicebus.windows.net  
-
-            { "DeviceId":"dev-01", "Temperature":"37.0" }  
-         */
 
         final LogEvent log = new LogEvent(System.currentTimeMillis(), event.getRenderedMessage());
         String logString = gson.toJson(log);
@@ -143,15 +163,32 @@ public final class EventHubRestAppender extends AppenderSkeleton {
         post.addHeader("Content-Type", "application/atom+xml;type=entry;charset=utf-8;");
         post.setEntity(data);
 
-        HttpPostMethodThread hp = new HttpPostMethodThread(post, errorHandler);
-        executorService.submit(hp);
+        CloseableHttpClient httpClient = HttpClientBuilder.create().build();
 
-        // future = CompletableFuture.runAsync(new HttpPostMethodThread(post, errorHandler));
+        try {
+            HttpResponse response = httpClient.execute(post);
+            // DEBUG
+            System.out.println(response.getStatusLine().getStatusCode());
+            HttpEntity entity = response.getEntity();
+            String content = EntityUtils.toString(entity);
+            // DEBUG
+            System.out.println(content);
+        } catch (IOException e) {
+            errorHandler.error(e.toString());
+        } catch (NullPointerException n) {
+            errorHandler.error(n.toString());
+        } finally {
+            try {
+                httpClient.close();
+            } catch (IOException e) {
+                errorHandler.error(e.toString());
+            }
+        }
     }
 
     @Override
     public void close() {
-        executorService.shutdown();
+        // Do nothing
     }
 
     @Override
@@ -161,12 +198,14 @@ public final class EventHubRestAppender extends AppenderSkeleton {
     }
 
     /**
-     * Based on the Azure Advanced Send Options here: 
+     * EventHub Data Object to store a log event when sending to EventHub.
+     * Can be used to store additional metadata relating to an event/log.
+     * Based on the Azure Advanced Send Options Example here: 
      * https://github.com/Azure/azure-event-hubs/blob/master/samples/Java/Basic/AdvancedSendOptions/src/main/java/com/microsoft/azure/eventhubs/samples/AdvancedSendOptions/AdvancedSendOptions.java
      */
     static final class LogEvent {
-        LogEvent(final long seed, final String message) {
-            this.id = "log-event" + seed;
+        LogEvent(final long epochtime, final String message) {
+            this.id = "log-event" + epochtime;
             this.logMessage = message;
         }
 
