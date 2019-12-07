@@ -52,3 +52,6 @@ log4j.rootCategory=INFO,eventhub
 log4j.appender.eventhub=com.rahoogan.log4j.EventHubRestAppender
 log4j.appender.eventhub.layout.ConversionPattern=%m%n
 ```
+
+## License
+Licensed under the [MIT License](https://github.com/rahoogan/log4j-eventhub-appender/blob/master/LICENSE)
